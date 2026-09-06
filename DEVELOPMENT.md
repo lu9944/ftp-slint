@@ -9,7 +9,7 @@
 | 技术栈 | Rust (edition 2024) + Slint 1.x |
 | FTP 库 | `suppaftp 11`（已在 dev-dependencies 中） |
 | 已有验证 | `tests/ftp_check.rs` 已通过真实服务器验证：连接 → 登录 → LIST；服务器在 NAT 后，PASV 返回私网 IP，需使用 **EPSV（ExtendedPassive）** 模式 |
-| 现有代码 | `src/main.rs` 仅为 Slint Hello World；`src/ui.slint` 为空窗口 |
+| 现有代码 | **M0 + M1 已完成**（2026-09）：模块骨架（`app/ftp/core/store`）+ 双 Worker 线程模型 + 五区 UI 布局 + 远程浏览（Auto=EPSV→PASV、MLSD→LIST）+ 三格式 LIST 解析 + mock/沙盒/真实三轨测试；近期任务清单见 §10 |
 | 凭据 | `.env` 有 `FTP_SERVER_URL / FTP_PORT / FTP_USER / FTP_PWD`（真实服务器，NAT 后需 EPSV）；`.env.local` 为**自部署沙盒服务器**（局域网，日常开发调试用），变量名与 `.env` 相同，**存在时优先加载**。两者均已 gitignore |
 
 ## 2. 产品目标
@@ -159,7 +159,7 @@ pub enum FtpEvent {
     Listing { path: String, entries: Vec<FileEntry> },
     LocalListing { path: PathBuf, entries: Vec<FileEntry> },
     LogLine { dir: LogDir, text: String },      // 喂给日志面板
-    TaskProgress  { task_id: u64, done: u64, total: u64 },
+    TaskProgress  { task_id: u64, done: u64, total: u64, speed: u64 },  // speed 由 worker 节流窗口计算（B/s）
     TaskFinished  { task_id: u64, outcome: Outcome },
     Disconnected { reason: String },
     Error { context: String, message: String },
@@ -226,6 +226,7 @@ Pending → Running ⇄ Paused → Done
 - 下载/上传（单文件）：独立连接执行，进度、速度、取消（置位 CancelHandle → drop 该任务连接）
 - 双击文件=传输到对侧当前目录；右键菜单（传输/删除/重命名/新建目录）
 - **验收**：真实服务器上传下载 1KB~1GB 文件，进度正确，可中途取消且浏览不中断
+- **进展（2026-09）**：**上传/下载双向链路均已落地**——`core/queue` 队列调度器（默认并发 2、独立连接、CancelHandle 取消=drop 连接、失败/取消清理残留：本地删半成品、远端 best-effort 删未完成文件）、100ms 节流进度+速度事件、队列面板（进度条/速度/状态/选中取消/清已完成）、双击远程文件=下载到本地当前目录、双击本地文件=上传到远程当前目录；已实测真实服务器 1MB 上传（9s，28 个速度事件）+ 下载（4s，5 个速度事件）逐字节一致，且修复了 TYPE I（二进制模式）问题。右键菜单待续
 
 ### M3 传输队列（1 周）
 - 队列模型 + 状态机 + 并发控制 + 失败重试（指数退避）
@@ -271,7 +272,7 @@ Pending → Running ⇄ Paused → Done
 | 6 | 断点续传服务器不支持 REST | 探测 `REST 1` 支持性；不支持则该任务整传 |
 | 7 | 大目录（万级条目）渲染卡顿 | Rust 侧分页/虚拟化：Slint 用 `ListView` + 只喂可见范围（先全量喂，卡则优化） |
 | 8 | keyring 在部分 Linux 环境不可用 | 降级策略：会话内记忆 + 明确提示"密码未保存" |
-| 9 | Slint 对 OS 级文件拖入（外部路径）的支持未证实 | M5 前置 PoC 验证；不可行则降级为面板间拖拽 + 双击/按钮传输 |
+| 9 | Slint 对 OS 级文件拖入（外部路径）的支持未证实 | **PoC 已完成（2026-09）**：Slint 1.17 内置 `DropArea` 仅支持**应用内**拖拽（`DataTransfer` 只携带 image/plain_text/user_data），winit 后端不处理 `WindowEvent::DroppedFile`，原生 API **拿不到 OS 文件路径**；但开启 `unstable-winit-030` feature 后，可通过 `WinitWindowAccessor::on_winit_window_event` 在 winit 层拦截 `DroppedFile(PathBuf)` 取得路径（`src/main.rs` 已实现该 PoC，拖入窗口即写入日志面板）。**结论：可行，但依赖 unstable API**（锁定 winit 后端与 winit 0.30 版本）。M5 采用此方案，同时保留降级路线（面板间拖拽 + 双击/按钮传输），若 unstable API 在后续版本移除则自动降级 |
 
 ## 8. 测试策略
 
@@ -279,6 +280,7 @@ Pending → Running ⇄ Paused → Done
 
 - **单元测试**：LIST/MLSD 解析（各平台样本行 ≥ 15 条）、队列状态机、路径拼接（`/a/b` + `c`、Windows 反斜杠等）、限速器
 - **集成测试 - mock 轨（可自动化）**：用 `libunftp` 在 `127.0.0.1` 随机端口起本地 FTP 服务器（dev-dependencies），覆盖：登录/浏览/上传→下载→比对/删除/重命名等常规路径，CI 直接跑
+  - 已落地（`tests/mock_ftp.rs`）：libunftp 0.20.3 **不支持 EPSV 与 MLSD**，恰好真实验证了客户端 Auto 降级（EPSV→PASV）与 MLSD→LIST 兜底两条路径
 - **集成测试 - 沙盒轨（日常开发默认）**：自部署沙盒服务器（`.env.local`，局域网）。日常开发调试、反复上传删除验证优先用它，不污染真实服务器。测试在检测到 `.env.local` 时才启用，否则自动跳过（CI 天然跳过）
 - **集成测试 - 真实轨（`#[ignore]` 手动跑）**：`.env` 真实服务器（NAT 后、需 EPSV，mock/沙盒无法覆盖）：
   - EPSV/PASV 降级连接（现有 `tests/ftp_check.rs` 扩展）
@@ -318,10 +320,21 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros"] }  # libunftp 
 
 ## 10. 近期任务清单（从 M0 开始）
 
-1. [ ] 创建模块骨架与 `FtpCommand/FtpEvent/LocalFsCommand` 类型（含 `TransferRequest`/`CancelHandle`）
-2. [ ] 实现控制 Worker + Local IO Worker + 事件回流 demo（UI 上点击"测试"能收到日志行）
-3. [ ] 把 `tests/ftp_check.rs` 的连接逻辑迁入 `ftp/client.rs`，`.env` 读取逻辑抽成公共模块（dotenvy：先读 `.env`，再用 `.env.local` 覆盖，沙盒优先）
-4. [ ] UI 五区布局骨架 + 空面板组件化（`FilePanel`）
-5. [ ] M1：EPSV→PASV 降级连接 + 远程目录浏览可用
-6. [ ] PoC：libunftp 本地 mock 服务器跑通自动化集成测试（§8 mock 轨基础设施）
-7. [ ] PoC：Slint 接收 OS 级文件拖入，结论写回 §7 风险 9（M5 前置，最迟 M5 开工前完成）
+> 以下 7 项已于 2026-09-06 全部完成（M0 + M1 收口，双 PoC 落地）。
+
+1. [x] 创建模块骨架与 `FtpCommand/FtpEvent/LocalFsCommand` 类型（含 `TransferRequest`/`CancelHandle`）
+   - `src/{lib,app}.rs`、`src/ftp/{types,client,parser}.rs`、`src/core/{queue,local}.rs`、`src/store/env.rs`、`src/ui/*.slint`；lib + bin 双 target，集成测试直接复用库代码
+2. [x] 实现控制 Worker + Local IO Worker + 事件回流 demo（UI 上点击"测试"能收到日志行）
+   - `app.rs`：`std::sync::mpsc` 命令通道 + `slint::invoke_from_event_loop` 事件回流；工具栏"测试"按钮 → `FtpCommand::Ping` → 控制线程回 `LogLine("pong…")` 显示到日志面板
+3. [x] 把 `tests/ftp_check.rs` 的连接逻辑迁入 `ftp/client.rs`，`.env` 读取逻辑抽成公共模块（dotenvy：先读 `.env`，再用 `.env.local` 覆盖，沙盒优先）
+   - `store/env.rs`：`load()`/`ftp_env()`/`ftp_env_from_file()`；`FtpSession::connect` 含 TCP 连接超时（15s）与控制连接读写超时（30s，`set_read_timeout`）
+4. [x] UI 五区布局骨架 + 空面板组件化（`FilePanel`）
+   - 菜单栏占位 / `Toolbar`（快速连接）/ 本地+远程 `FilePanel`（路径栏、表头、ListView）/ `LogPanel` / `QueuePanel` 占位 + 状态栏；`theme.slint` 暗色主题
+5. [x] M1：EPSV→PASV 降级连接 + 远程目录浏览可用
+   - Auto 模式**连接时探测**：先 EPSV 发一次 LIST，失败即切 PASV（连接期一次性协商，后续传输/浏览共用）；MLSD 优先、LIST 兜底；UNIX/Windows-IIS/MLSD 三格式解析为纯函数，30 个单测覆盖（含中文/空格文件名、符号链接、无年份时间回推、分号文件名等边界）；UI 支持双击进目录、↑ 返回、↻ 刷新、路径栏回车跳转；真实服务器（`.env`，NAT 后）与沙盒（`.env.local`）均实测通过
+6. [x] PoC：libunftp 本地 mock 服务器跑通自动化集成测试（§8 mock 轨基础设施）
+   - `tests/mock_ftp.rs` 4 个用例：连接+列表+降级断言（`mode()==Passive`）、上传→下载逐字节比对、MKD/RNFR-RNTO/DELE/RMD、子目录 CWD/CDUP；libunftp 无 EPSV/MLSD，反向验证了降级路径
+7. [x] PoC：Slint 接收 OS 级文件拖入，结论写回 §7 风险 9（M5 前置，最迟 M5 开工前完成）
+   - 结论：内置 `DropArea` 仅应用内拖拽；需 `unstable-winit-030` 的 `on_winit_window_event` 拦截 `DroppedFile` 才能拿到 OS 路径（已在 `main.rs` 实现，拖入即记日志）。详见 §7 风险 9
+
+**测试现状**（`cargo test`）：单元 30 通过；mock 轨 4 通过；沙盒轨 1 通过（有 `.env.local` 才跑）；真实轨 1 个 `#[ignore]`（`cargo test --test ftp_check -- --ignored --nocapture` 手动跑，断言 EPSV 协商）；`cargo clippy --all-targets` 零警告。

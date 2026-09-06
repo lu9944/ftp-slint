@@ -1,0 +1,216 @@
+import { Theme } from "theme.slint";
+import { Toolbar } from "components/toolbar.slint";
+import { FilePanel, FileRow } from "components/file_panel.slint";
+import { LogPanel } from "components/log_panel.slint";
+import { QueuePanel, TaskRow } from "components/queue_panel.slint";
+
+export component MainWindow inherits Window {
+    title: "ftp-slint";
+    min-width: 960px;
+    preferred-width: 1200px;
+    height: 760px;
+    background: Theme.bg;
+
+    in-out property <string> host;
+    in-out property <string> port: "21";
+    in-out property <string> username;
+    in-out property <string> password;
+    in-out property <bool> connected: false;
+    in-out property <string> status-text: "就绪";
+    in-out property <string> remote-path: "/";
+    in-out property <string> local-path;
+    in-out property <[FileRow]> remote-files;
+    in-out property <[FileRow]> local-files;
+    in-out property <[string]> log-lines;
+    in-out property <[TaskRow]> tasks;
+
+    callback quick-connect();
+    callback disconnect();
+    callback test-event();
+    callback remote-open(string);
+    callback remote-open-file(string);
+    callback remote-refresh();
+    callback remote-up();
+    callback remote-goto(string);
+    callback local-open(string);
+    callback local-open-file(string);
+    callback local-refresh();
+    callback local-up();
+    callback local-goto(string);
+    callback cancel-task(int);
+    callback clear-finished();
+    callback remote-mkdir(string);
+    callback remote-delete(string);
+    callback remote-rename(string, string);
+    callback local-mkdir(string);
+    callback local-delete(string);
+    callback local-rename(string, string);
+
+    VerticalLayout {
+        padding: 8px;
+        spacing: 6px;
+
+        HorizontalLayout {
+            height: 24px;
+            padding-left: 4px;
+            spacing: 16px;
+            Text {
+                text: "文件";
+                font-size: 12px;
+                color: Theme.fg-dim;
+                vertical-alignment: center;
+            }
+            Text {
+                text: "站点";
+                font-size: 12px;
+                color: Theme.fg-dim;
+                vertical-alignment: center;
+            }
+            Text {
+                text: "传输";
+                font-size: 12px;
+                color: Theme.fg-dim;
+                vertical-alignment: center;
+            }
+            Text {
+                text: "查看";
+                font-size: 12px;
+                color: Theme.fg-dim;
+                vertical-alignment: center;
+            }
+            Text {
+                text: "帮助";
+                font-size: 12px;
+                color: Theme.fg-dim;
+                vertical-alignment: center;
+            }
+            Rectangle { }
+        }
+
+        Toolbar {
+            host <=> root.host;
+            port <=> root.port;
+            username <=> root.username;
+            password <=> root.password;
+            connected: root.connected;
+            connect-clicked => {
+                root.quick-connect();
+            }
+            disconnect-clicked => {
+                root.disconnect();
+            }
+            test-clicked => {
+                root.test-event();
+            }
+        }
+
+        HorizontalLayout {
+            spacing: 6px;
+            vertical-stretch: 1;
+            FilePanel {
+                title: "本地";
+                path <=> root.local-path;
+                files: root.local-files;
+                connected: true;
+                horizontal-stretch: 1;
+                open-dir(name) => {
+                    root.local-open(name);
+                }
+                open-file(name) => {
+                    root.local-open-file(name);
+                }
+                refresh => {
+                    root.local-refresh();
+                }
+                up => {
+                    root.local-up();
+                }
+                goto(p) => {
+                    root.local-goto(p);
+                }
+                mkdir-requested(name) => {
+                    root.local-mkdir(name);
+                }
+                delete-requested(name) => {
+                    root.local-delete(name);
+                }
+                rename-requested(old, new) => {
+                    root.local-rename(old, new);
+                }
+            }
+            FilePanel {
+                title: "远程";
+                path <=> root.remote-path;
+                files: root.remote-files;
+                connected: root.connected;
+                horizontal-stretch: 1;
+                open-dir(name) => {
+                    root.remote-open(name);
+                }
+                open-file(name) => {
+                    root.remote-open-file(name);
+                }
+                refresh => {
+                    root.remote-refresh();
+                }
+                up => {
+                    root.remote-up();
+                }
+                goto(p) => {
+                    root.remote-goto(p);
+                }
+                mkdir-requested(name) => {
+                    root.remote-mkdir(name);
+                }
+                delete-requested(name) => {
+                    root.remote-delete(name);
+                }
+                rename-requested(old, new) => {
+                    root.remote-rename(old, new);
+                }
+            }
+        }
+
+        LogPanel {
+            lines: root.log-lines;
+        }
+
+        QueuePanel {
+            tasks <=> root.tasks;
+            cancel-task(id) => {
+                root.cancel-task(id);
+            }
+            clear-finished => {
+                root.clear-finished();
+            }
+        }
+
+        HorizontalLayout {
+            height: 20px;
+            padding-left: 4px;
+            padding-right: 4px;
+            spacing: 12px;
+            Text {
+                text: root.connected ? "● 已连接" : "○ 未连接";
+                font-size: 11px;
+                color: root.connected ? Theme.ok : Theme.fg-dim;
+                vertical-alignment: center;
+            }
+            Text {
+                text: root.status-text;
+                font-size: 11px;
+                color: Theme.fg-dim;
+                vertical-alignment: center;
+                overflow: elide;
+            }
+            Rectangle { }
+            Text {
+                text: root.remote-path;
+                font-size: 11px;
+                color: Theme.fg-dim;
+                vertical-alignment: center;
+                overflow: elide;
+            }
+        }
+    }
+}

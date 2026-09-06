@@ -2,12 +2,41 @@
 name = "ftp-slint"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.85"
+
+[lints.rust]
+unsafe_code = "warn"
+
+[lints.clippy]
+all = "warn"
+pedantic = "warn"
 
 [dependencies]
-slint = "1"
+slint = { version = "1", features = ["unstable-winit-030"] }
+suppaftp = "11.0.0"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+directories = "5"
+dotenvy = "0.15"
+thiserror = "2"
+anyhow = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-appender = "0.2"
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
 
 [build-dependencies]
 slint-build = "1"
 
 [dev-dependencies]
-suppaftp = "11.0.0"
+libunftp = "0.20"
+unftp-sbe-fs = "0.2"
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+
+[lib]
+name = "ftp_slint"
+path = "src/lib.rs"
+
+[[bin]]
+name = "ftp-slint"
+path = "src/main.rs"

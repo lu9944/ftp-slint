@@ -1,0 +1,33 @@
+import { ListView } from "std-widgets.slint";
+import { Theme } from "../theme.slint";
+
+export component LogPanel inherits Rectangle {
+    in property <[string]> lines;
+    height: 150px;
+
+    background: Theme.panel;
+    border-width: 1px;
+    border-color: Theme.border;
+    border-radius: 6px;
+    clip: true;
+
+    VerticalLayout {
+        padding: 6px;
+        spacing: 4px;
+
+        Text {
+            text: "消息日志";
+            font-size: 12px;
+            color: Theme.fg-dim;
+        }
+        ListView {
+            vertical-stretch: 1;
+            for line in root.lines: Text {
+                text: line;
+                font-size: 12px;
+                color: Theme.fg-dim;
+                vertical-alignment: center;
+            }
+        }
+    }
+}
